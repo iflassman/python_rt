@@ -13,6 +13,13 @@ IMAGE_WIDTH, IMAGE_HEIGHT = 720, 480
 ### Classes
 ################################################################################
 
+
+#
+# Using Tk and PhotoImage to make a canvas where we can set pixels individually.
+# This is really inefficient, but runs on virtually all Python installations and
+# we're not concerned about performance with this example.  If needed, it can 
+# be easily modified to use another display system.
+#
 class Image:
     def __init__(self, xres, yres):
         self.xres = xres
@@ -65,23 +72,21 @@ def Saturate(v):
 
 
 
-
 def Render(image):
     #
     # Put all your rendering code here
     #
 
-    image_xres = image.xres
-    image_yres = image.yres 
-
     print("Rendering ... ", end = "" )
+
     Freq = 10
-    for y in range(image_yres):
-        v = y / image_yres
-        for x in range(image_xres):
-            u = x / image_xres - 1
+    for y in range(image.yres):
+        v = y / image.yres
+        for x in range(image.xres):
+            u = x / image.xres - 1
             Checker = (int(Freq * u) % 2) ^ (int(Freq * v) % 2)
             image.SetPixel(x, y, (Checker, 0, 0))
+
     print("Done")
 
 
