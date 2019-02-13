@@ -1,12 +1,54 @@
 from tkinter import Tk, Canvas, PhotoImage, mainloop
 from math import sin
 from collections import namedtuple
+from pprint import pprint
 
 ################################################################################
 ### Globals
 ################################################################################
 
-IMAGE_WIDTH, IMAGE_HEIGHT = 512, 512
+IMAGE_WIDTH, IMAGE_HEIGHT = 720, 480
+
+################################################################################
+### Classes
+################################################################################
+
+class Image:
+    def __init__(self, xres, yres):
+        self.xres = xres
+        self.yres = yres
+
+        self.img_buf = [ ]
+        for y in range(yres):
+            Row = [ ]
+            for x in range(xres):
+                Row.append("#000000")
+            self.img_buf.append(Row)
+
+        self.window = Tk()
+
+        self.canvas = Canvas(self.window, width=xres, height=yres, bg="#000000")
+        self.canvas.pack()
+
+        self.tk_img = PhotoImage(width=xres, height=yres)
+
+        self.canvas.create_image((xres/2, yres/2), image=self.tk_img, state="normal")
+
+    def Display(self):
+        display_str = ""
+        for y in range(self.yres):
+            display_str += "{" + " ".join(self.img_buf[y]) + "} " 
+        
+        self.tk_img.put(display_str, (0,0))
+        
+             
+    def SetPixel(self, x, y, c):
+        color = "#%02x%02x%02x" % (int(Saturate(c[0] * 255.0)), 
+                                   int(Saturate(c[1] * 255.0)), 
+                                   int(Saturate(c[2] * 255.0)))
+
+        self.img_buf[y][x] = color
+
 
 ################################################################################
 ### Functions
@@ -22,55 +64,25 @@ def Saturate(v):
     return(v)
 
 
-def SetPixel(image, x, y, c):
-    color = "#%02x%02x%02x" % (int(Saturate(c[0] * 255.0)), 
-                               int(Saturate(c[1] * 255.0)), 
-                               int(Saturate(c[2] * 255.0)))
 
-    
-    image[1][y][x] = color
-    #image[0].put(color, (x,y))
-
-def CreateImage(xres, yres):
-    window = Tk()
-
-    canvas = Canvas(window, width=xres, height=yres, bg="#000000")
-    canvas.pack()
-
-    tk_img = PhotoImage(width=xres, height=yres)
-
-    canvas.create_image((xres/2, yres/2), image=tk_img, state="normal")
-
-    img_buf = []
-    for y in range(yres):
-        Row = [ ]
-        for x in range(xres):
-            Row.append("#000000")
-        img_buf.append(Row)
-             
-
-    return([tk_img, img_buf])
-
-def DisplayImage(image):
-    display_str = ""
-    for y in range(IMAGE_HEIGHT):
-        display_str += "{" + " ".join(image[1][y]) + "} " 
-    
-    image[0].put(display_str, (0,0))
-    
 
 def Render(image):
     #
     # Put all your rendering code here
     #
-    Freq = 10
-    for y in range(IMAGE_HEIGHT):
-        v = y / (IMAGE_HEIGHT - 1)
-        for x in range(IMAGE_WIDTH):
-            u = x / (IMAGE_WIDTH - 1)
-            Checker = (int(Freq * u) % 2) ^ (int(Freq * v) % 2)
-            SetPixel(image, x, y, (Checker, 0, 0))
 
+    image_xres = image.xres
+    image_yres = image.yres 
+
+    print("Rendering ... ", end = "" )
+    Freq = 10
+    for y in range(image_yres):
+        v = y / image_yres
+        for x in range(image_xres):
+            u = x / image_xres - 1
+            Checker = (int(Freq * u) % 2) ^ (int(Freq * v) % 2)
+            image.SetPixel(x, y, (Checker, 0, 0))
+    print("Done")
 
 
 
@@ -78,10 +90,11 @@ def Render(image):
 ### Main
 ################################################################################
 
-Image = CreateImage(IMAGE_WIDTH, IMAGE_HEIGHT)
+image = Image(IMAGE_WIDTH, IMAGE_HEIGHT)
 
-Render(Image)
-DisplayImage(Image)
+Render(image)
+
+image.Display()
 
 mainloop()
 
