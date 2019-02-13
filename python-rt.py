@@ -1,5 +1,6 @@
 from tkinter import Tk, Canvas, PhotoImage, mainloop
 from math import sin
+from collections import namedtuple
 
 ################################################################################
 ### Globals
@@ -62,13 +63,13 @@ def Render(image):
     #
     # Put all your rendering code here
     #
+    Freq = 10
     for y in range(IMAGE_HEIGHT):
+        v = y / (IMAGE_HEIGHT - 1)
         for x in range(IMAGE_WIDTH):
-            if(x == 0 or  x == IMAGE_WIDTH - 1 or
-               y == 0 or  y == IMAGE_HEIGHT - 1 or
-               x == y or
-               x == IMAGE_HEIGHT - y):
-                    SetPixel(image, x, y, (1, 0, 0))
+            u = x / (IMAGE_WIDTH - 1)
+            Checker = (int(Freq * u) % 2) ^ (int(Freq * v) % 2)
+            SetPixel(image, x, y, (Checker, 0, 0))
 
 
 
