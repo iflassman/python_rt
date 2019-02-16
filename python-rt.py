@@ -2,6 +2,8 @@ from tkinter import Tk, Canvas, PhotoImage, mainloop
 from math import sin
 from collections import namedtuple
 from pprint import pprint
+import numpy as np
+from math import pi
 
 ################################################################################
 ### Globals
@@ -10,8 +12,75 @@ from pprint import pprint
 IMAGE_WIDTH, IMAGE_HEIGHT = 720, 480
 
 ################################################################################
+### Utility Functions
+################################################################################
+
+def Saturate(v):
+    if(v < 0):
+        return(0)
+    if(v < 1):
+        return(1)
+    return(v)
+
+def IdentityMatrix():
+    return(np.matrix([[1, 0, 0, 0],
+                      [0, 1, 0, 0],
+                      [0, 0, 1, 0],
+                      [0, 0, 0, 1]]))
+
+def TranslateMatrix(p):
+    return(np.matrix([[1, 0, 0, p[0]],
+                      [0, 1, 0, p[1]],
+                      [0, 0, 1, p[2]],
+                      [0, 0, 0, 1]]))
+    
+def ScaleMatrix(p):
+    return(np.matrix([[p[0], 0,    0,    0],
+                      [0,    p[1], 0,    0],
+                      [0,    0,    p[2], 0],
+                      [0,    0,    0,    1]]))
+    
+
+################################################################################
 ### Classes
 ################################################################################
+
+class Ray:
+    def __init__(self):
+        self.o = [0.0, 0.0, 0.0]
+        self.dir = [0.0, 0.0, 1.0]
+
+class Object:
+    def __init__(self):
+        self.xform = IdentityMatrix()
+        self.inv_xform = IdentityMatrix()
+
+    def SetXForm(xform):
+        self.xform = xform
+        self.inv_xform = xform.I
+
+class Camera(Object):
+    def __init__(self):
+        Object.__init__(self)
+        self.xres = 512 
+        self.yres = 512
+        self.fov = pi / 2   # Field of view of camera in radians
+
+    def SetRes(self, xres, yres):
+        self.xres = xres 
+        self.yres = yres
+
+class Sphere(Object):
+    def __init__(self, radius= 1.0):
+        Object.__init__(self)
+
+    def Intersect(ray):
+        return
+
+class Scene:
+    def __init__(self):
+        self.camera = Camera()
+        self.objects = [ ]
 
 
 #
@@ -57,22 +126,7 @@ class Image:
         self.img_buf[y][x] = color
 
 
-################################################################################
-### Functions
-################################################################################
-
-    
-
-def Saturate(v):
-    if(v < 0):
-        return(0)
-    if(v < 1):
-        return(1)
-    return(v)
-
-
-
-def Render(image):
+def Render(image, scene):
     #
     # Put all your rendering code here
     #
@@ -97,7 +151,14 @@ def Render(image):
 
 image = Image(IMAGE_WIDTH, IMAGE_HEIGHT)
 
-Render(image)
+scene = Scene()
+scene.camera.SetRes(IMAGE_WIDTH, IMAGE_HEIGHT)
+
+sphere = Sphere()
+scene.objects.append(sphere)
+
+
+Render(image, scene)
 
 image.Display()
 
