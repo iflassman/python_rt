@@ -4,10 +4,10 @@ from tkinter import Tk, Canvas, PhotoImage, mainloop
 from math import sin
 from pprint import pprint
 from numpy import dot as dot
-from numpy import multiply as multiply
+from numpy import multiply as mul
 from numpy import matmul as matmul
 from numpy import add as add
-from numpy import subtract as subtract
+from numpy import subtract as sub
 from numpy import absolute as absolute
 from numpy import linalg as LA
 from math import pi, tan, inf, sqrt, acos, atan2
@@ -73,7 +73,7 @@ def Render(image, scene):
 
     print("Rendering ... ", end = "" )
 
-    i = Intersection()
+    i = Intersection(scene)
 
     for y in range(image.yres):
         for x in range(image.xres):
@@ -101,7 +101,8 @@ class Ray:
         self.dir = dir
 
 class Intersection:
-    def __init__(self):
+    def __init__(self, scene):
+        self.scene = scene          # Keep reference to scene
         self.ray = Ray()            # Ray used for intersection
         self.dist = inf             # distance along ray to point of intersection
         self.p = [0.0, 0.0, 0.0]    # point of intersection
@@ -141,6 +142,17 @@ class CheckerConst(Material):
         else:
             i.color = self.color1
 
+        diffuse = [0.0, 0.0, 0.0]
+        for light in i.scene.lights:
+            light_info = light.GetLightSampleInfo(i)
+            l_norm = Normalize(light_info.dir)
+            n_norm = Normalize(i.n)
+
+            l_dot_n = dot(l_norm, n_norm)
+            if(l_dot_n > 0.0):
+                diffuse = add(diffuse, mul(l_dot_n, light_info.emission))
+
+        i.color = mul(i.color, diffuse)
         i.opacity = [1, 1, 1]
 
 
@@ -158,6 +170,26 @@ class Object:
 
     def Origin(self):
         return([self.xform[0][3], self.xform[1][3], self.xform[2][3]])
+
+class LightInfo:
+    def __init__(self, emission, p, dir):
+        self.emission = emission
+        self.p = p
+        self.dir = dir
+
+class Light(Object):
+    def __init__(self, color = [1, 1, 1]):
+        Object.__init__(self)
+        self.color = color
+
+class PointLight(Light):
+    def __init__(self, color = [1, 1, 1]):
+        Light.__init__(self, color)
+
+    def GetLightSampleInfo(self, i):
+        return(LightInfo(self.color,
+                         self.Origin(),
+                         sub(self.Origin(), i.p)))
 
 class Camera(Object):
     def __init__(self):
@@ -201,7 +233,7 @@ class Sphere(Object):
         b = 2.0 * dot(dir, o)
         c = dot(o, o) - 1
 
-        # Use quadric formula to solve for t
+        # Use quadratic formula to solve for t
         delta = b * b - 4 * c
 
         if(delta < -EPSILON): # no intersection if k is negative
@@ -223,13 +255,13 @@ class Sphere(Object):
             else:
                 return(False) # ray intersection are both behind ray
 
-        t_dir = multiply(t, dir) # scaled dir vec in global space
+        t_dir = mul(t, dir) # scaled dir vec in global space
         t_dir_glob = VecMul(self.xform, t_dir) # in global space
         i.dist = LA.norm(t_dir)
         i.p = add(i.ray.o, t_dir_glob)
         i.n = VecMul(self.xform, add(o, t_dir))
-        i.uv[0] = (atan2(t_dir[2], t_dir[0]) + pi)  / (2.0 * pi)
-        i.uv[1] = acos(t_dir[1]) /  pi
+        i.uv[0] = (atan2(t_dir[2], t_dir[0]) + pi)  / (2.0 * pi) # longitude angle 
+        i.uv[1] = acos(t_dir[1]) /  pi                           # latitude angle
 
         return True
 
@@ -240,6 +272,7 @@ class Scene:
     def __init__(self):
         self.camera = Camera()
         self.objects = [ ]
+        self.lights = [ ]
 
     def Trace(self, i):
         i.object = None
@@ -303,6 +336,10 @@ class Image:
 
 image = Image(IMAGE_WIDTH, IMAGE_HEIGHT)
 
+
+#
+# Build scene
+#
 scene = Scene()
 scene.camera.SetRes(IMAGE_WIDTH, IMAGE_HEIGHT)
 scene.camera.SetXForm(TranslateMatrix([0, 0, -3]))
@@ -321,22 +358,14 @@ xform = matmul(translate, scale)
 sphere.SetXForm(xform)
 scene.objects.append(sphere)
 
-Render(image, scene)
+translate = TranslateMatrix([5.0, -3.0, -5.0])
+light = PointLight()
+light.SetXForm(translate)
+scene.lights.append(light)
 
-image.Display()
-
-mainloop()
-
-scene.objects.append(sphere)
-
-sphere = Sphere()
-scale = ScaleMatrix([1.0, 2.0, 2.0])
-translate = TranslateMatrix([1.0, 0.0, 2.0])
-xform = matmul(translate, scale)
-
-sphere.SetXForm(xform)
-scene.objects.append(sphere)
-
+#
+# Render and display 
+#
 Render(image, scene)
 
 image.Display()
