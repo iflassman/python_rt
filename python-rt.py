@@ -20,7 +20,7 @@ from copy import deepcopy
 
 EPSILON = sys.float_info.epsilon
 RAY_TRACE_EPSILON = .001
-IMAGE_WIDTH, IMAGE_HEIGHT = 512, 512
+IMAGE_WIDTH, IMAGE_HEIGHT = 128, 128
 MAX_RAY_RECURSION_DEPTH = 10
 DEFAULT_MATERIAL = None
 
@@ -68,6 +68,45 @@ def RotXMatrix(angle):
             [0,    cos_angle,  sin_angle, 0],
             [0,    0,          0,         1]])
 
+def RotYMatrix(angle):
+    sin_angle = sin(angle)
+    cos_angle = cos(angle)
+
+    return([[sin_angle,    0,  -cos_angle, 0],
+            [0,            1,  0,          0],
+            [cos_angle,    0,  sin_angle,  0],
+            [0,            0,  0,          1]])
+
+def RotZMatrix(angle):
+    sin_angle = sin(angle)
+    cos_angle = cos(angle)
+
+    return( [sin_angle, -cos_angle, 0, 0],
+            [cos_angle,  sin_angle, 0, 0],
+            [0,          0,         1, 0],
+            [0,          0,         0, 1])
+
+def ConcatMatrices(matrices):
+    ret = matrices[-1]
+    print("....")
+    pprint(ret)
+    for i in reversed(range(len(matrices) - 1)):
+        print("i = ", i)
+        ret = mul(matrices[i], ret)
+        pprint(ret)
+
+    print("----")
+
+    return(ret)
+
+def ComboXForm(translate = [0.0, 0.0, 0.0], 
+               scale = [1.0, 1.0, 1.0], 
+               x_angle = 0.0, y_angle = 0.0, z_angle = 0.0):
+    return(ConcatMatrices([ TranslateMatrix(translate),
+                            ScaleMatrix(scale),
+                            RotXMatrix(x_angle),
+                            RotYMatrix(y_angle),
+                            RotZMatrix(z_angle) ]))
 
 def VecMul(m, v):
     return([m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
@@ -464,10 +503,9 @@ scene.camera.SetFov(45)
 
 
 sphere = Sphere()
-scale = ScaleMatrix([1.0, 1.0, 1.0])
-translate = TranslateMatrix([0.0, 0.0, 0.0])
 rot = RotXMatrix(-pi / 4)
-xform = matmul(matmul(translate, scale), rot)
+xform = ComboXForm([1.0, 2.0, 3.0], [5.0] * 3, pi / 4)
+pprint(xform)
 sphere.SetXForm(xform)
 scene.objects.append(sphere)
 
@@ -479,7 +517,7 @@ scale = ScaleMatrix([0.5, 0.5, 0.5])
 translate = TranslateMatrix([0.5, 0.2, -3])
 xform = matmul(translate, scale)
 sphere.SetXForm(xform)
-#scene.objects.append(sphere)
+scene.objects.append(sphere)
 
 material = CheckerSimple()
 material.color0 = [.4, .4, .4]
@@ -491,7 +529,6 @@ scale = ScaleMatrix([6, 1, 6])
 #rot = RotXMatrix(0)
 #xform = matmul(matmul(translate, scale), rot)
 xform = matmul(translate, scale)
-pprint(xform)
 rect.SetXForm(xform)
 scene.objects.append(rect)
 
