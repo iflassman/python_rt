@@ -10,14 +10,15 @@ from numpy import add as add
 from numpy import subtract as subtract
 from numpy import absolute as absolute
 from numpy import linalg as LA
-from math import pi, tan, inf, sqrt
+from math import pi, tan, inf, sqrt, acos, atan2
 
 ################################################################################
 ### Globals
 ################################################################################
 
 EPSILON = sys.float_info.epsilon
-IMAGE_WIDTH, IMAGE_HEIGHT = 128, 128
+IMAGE_WIDTH, IMAGE_HEIGHT = 512, 512
+DEFAULT_MATERIAL = None
 
 ################################################################################
 ### Utility Functions
@@ -32,7 +33,7 @@ def Normalize(v):
 def Saturate(v):
     if(v < 0):
         return(0)
-    if(v < 1):
+    if(v > 1):
         return(1)
     return(v)
 
@@ -79,7 +80,10 @@ def Render(image, scene):
             scene.camera.GenPrimaryRay(i.ray, x, y)
 
             if(scene.Trace(i)):
-                image.SetPixel(x, y, (1, 0, 0))
+                i.CalcAll()
+                i.object.material.Shade(i)
+
+                image.SetPixel(x, y, i.color)
             else:
                 image.SetPixel(x, y, (0, 0, 0))
 
@@ -105,14 +109,48 @@ class Intersection:
         self.uv = [0.0, 0.0]        # uv coordinates at point of intersection
         self.object = None          # Intersection object
 
+        self.color = [1, 1, 1]      # Reflected at interesection
+        self.opacity = [1, 1, 1]    # Colored opacity at intersection
+
     def CalcAll(self):
         if(self.object != None):
-            self.object.CallAllIntersection(self)
+            self.object.CalcAllIntersection(self)
        
+class Material:
+    def __init__(self):
+        return
+
+    def Shade(self, i):
+        self.color = [1, 1, 1]
+        self.opacity = [1, 1, 1]
+
+class CheckerConst(Material):
+    def __init__(self, ufreq = 40, vfreq = 20):
+        Material.__init__(self)
+        self.ufreq = ufreq
+        self.vfreq = vfreq
+        self.color0 = [.2, .2, .2]
+        self.color1 = [1, .2, .2]
+
+    def Shade(self, i):
+        utile = int(self.ufreq * i.uv[0])
+        vtile = int(self.vfreq * i.uv[1])
+
+        if(utile % 2 ^ vtile % 2):
+            i.color = self.color0
+        else:
+            i.color = self.color1
+
+        i.opacity = [1, 1, 1]
+
+
+DEFAULT_MATERIAL = CheckerConst()
+
 class Object:
     def __init__(self):
         self.xform = IdentityMatrix()
         self.inv_xform = IdentityMatrix()
+        self.material = DEFAULT_MATERIAL
 
     def SetXForm(self, xform):
         self.xform = xform
@@ -188,8 +226,10 @@ class Sphere(Object):
         t_dir = multiply(t, dir) # scaled dir vec in global space
         t_dir_glob = VecMul(self.xform, t_dir) # in global space
         i.dist = LA.norm(t_dir)
-        i.p = i.ray.dir + t_dir_glob
+        i.p = add(i.ray.o, t_dir_glob)
         i.n = VecMul(self.xform, add(o, t_dir))
+        i.uv[0] = (atan2(t_dir[2], t_dir[0]) + pi)  / (2.0 * pi)
+        i.uv[1] = acos(t_dir[1]) /  pi
 
         return True
 
@@ -248,9 +288,9 @@ class Image:
         
              
     def SetPixel(self, x, y, c):
-        color = "#%02x%02x%02x" % (int(Saturate(c[0] * 255.0)), 
-                                   int(Saturate(c[1] * 255.0)), 
-                                   int(Saturate(c[2] * 255.0)))
+        color = "#%02x%02x%02x" % (int(Saturate(c[0]) * 255.0), 
+                                   int(Saturate(c[1]) * 255.0), 
+                                   int(Saturate(c[2]) * 255.0))
 
         self.img_buf[y][x] = color
 
