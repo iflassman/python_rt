@@ -74,13 +74,6 @@ def Render(image, scene):
 
     i = Intersection()
 
-    scene.camera.GenPrimaryRay(i.ray, 63.5, 63.5)
-    if(scene.Trace(i)):
-        print("hit")
-    else:
-        print("miss")
-    
-
     for y in range(image.yres):
         for x in range(image.xres):
             scene.camera.GenPrimaryRay(i.ray, x, y)
@@ -165,11 +158,6 @@ class Sphere(Object):
         # Transform ray into object space
         o = PointMul(self.inv_xform, i.ray.o)
         dir = Normalize(VecMul(self.inv_xform, i.ray.dir))
-
-        #print("i.ray.o = ", i.ray.o)
-        #print("i.ray.dir = ", i.ray.dir)
-        #print("o = ", o)
-        #print("dir = ", dir)
 
         # Assume sphere is centered at origin with radius 1.0 in object space
         b = 2.0 * dot(dir, o)
@@ -280,17 +268,31 @@ scene.camera.SetRes(IMAGE_WIDTH, IMAGE_HEIGHT)
 scene.camera.SetXForm(TranslateMatrix([0, 0, -3]))
 
 sphere = Sphere()
-sphere.SetXForm(TranslateMatrix([0, 0, 0]))
+scale = ScaleMatrix([1.0, 1.0, 1.0])
+translate = TranslateMatrix([-1.0, 0.0, 0.0])
+xform = matmul(translate, scale)
+sphere.SetXForm(xform)
+scene.objects.append(sphere)
+
+sphere = Sphere()
+scale = ScaleMatrix([1.0, 2.0, 1.0])
+translate = TranslateMatrix([1.0, 0.0, 0.0])
+xform = matmul(translate, scale)
+sphere.SetXForm(xform)
+scene.objects.append(sphere)
+
+Render(image, scene)
+
+image.Display()
+
+mainloop()
+
 scene.objects.append(sphere)
 
 sphere = Sphere()
 scale = ScaleMatrix([1.0, 2.0, 2.0])
 translate = TranslateMatrix([1.0, 0.0, 2.0])
 xform = matmul(translate, scale)
-
-pprint(scale)
-pprint(translate)
-pprint(xform)
 
 sphere.SetXForm(xform)
 scene.objects.append(sphere)
