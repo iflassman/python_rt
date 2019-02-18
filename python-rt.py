@@ -5,6 +5,7 @@ from math import sin
 from pprint import pprint
 from numpy import dot as dot
 from numpy import multiply as mul
+from numpy import negative as neg
 from numpy import matmul as matmul
 from numpy import add as add
 from numpy import subtract as sub
@@ -77,6 +78,8 @@ def Render(image, scene):
 
     for y in range(image.yres):
         for x in range(image.xres):
+    #for y in ([63.5]):
+    #    for x in ([63.5]):
             scene.camera.GenPrimaryRay(i.ray, x, y)
 
             if(scene.Trace(i)):
@@ -125,38 +128,57 @@ class Material:
         self.color = [1, 1, 1]
         self.opacity = [1, 1, 1]
 
-class CheckerConst(Material):
-    def __init__(self, ufreq = 40, vfreq = 20):
+class CheckerSimple(Material):
+    def __init__(self, ufreq = 20, vfreq = 10):
         Material.__init__(self)
         self.ufreq = ufreq
         self.vfreq = vfreq
         self.color0 = [.2, .2, .2]
         self.color1 = [1, .2, .2]
+        self.ks =  [.7, .7, .7]
+        self.spec_exp = 15.0
 
     def Shade(self, i):
         utile = int(self.ufreq * i.uv[0])
         vtile = int(self.vfreq * i.uv[1])
 
-        if(utile % 2 ^ vtile % 2):
+        if((utile) % 2 ^ (vtile % 2)):
             i.color = self.color0
         else:
             i.color = self.color1
 
+        n_norm = Normalize(i.n)
+        e_norm = Normalize(i.ray.dir)
+        e_dot_n = dot(e_norm, n_norm)
+        h = Normalize(add(e_norm, mul(-2.0 * e_dot_n, n_norm)))
+
         diffuse = [0.0, 0.0, 0.0]
+        specular = [0.0, 0.0, 0.0]
         for light in i.scene.lights:
             light_info = light.GetLightSampleInfo(i)
             l_norm = Normalize(light_info.dir)
-            n_norm = Normalize(i.n)
 
             l_dot_n = dot(l_norm, n_norm)
             if(l_dot_n > 0.0):
                 diffuse = add(diffuse, mul(l_dot_n, light_info.emission))
 
-        i.color = mul(i.color, diffuse)
+                spec = l_dot_n * pow(dot(h, l_norm), self.spec_exp)
+                specular = add(specular, mul(spec, light_info.emission))
+                
+
+            #print("i.p =", i.p)
+            #print("i.n =", i.n)
+            #print("n_norm =", n_norm)
+            #print("light_info.dir =", light_info.dir)
+            #print("l_norm =", l_norm)
+            #print("l_dot_n =", l_dot_n)
+            #print("diffuse =", diffuse)
+
+        i.color = add(mul(i.color, diffuse), mul(self.ks, specular))
         i.opacity = [1, 1, 1]
 
 
-DEFAULT_MATERIAL = CheckerConst()
+DEFAULT_MATERIAL = CheckerSimple()
 
 class Object:
     def __init__(self):
@@ -218,6 +240,10 @@ class Camera(Object):
 
         # Transform ray dir into global space
         ray.dir = VecMul(self.xform, dir)
+
+    # Set Field of View in degrees
+    def SetFov(self, angle): 
+        self.fov = angle * pi / 180.0
        
 class Sphere(Object):
     def __init__(self):
@@ -259,9 +285,10 @@ class Sphere(Object):
         t_dir_glob = VecMul(self.xform, t_dir) # in global space
         i.dist = LA.norm(t_dir)
         i.p = add(i.ray.o, t_dir_glob)
-        i.n = VecMul(self.xform, add(o, t_dir))
-        i.uv[0] = (atan2(t_dir[2], t_dir[0]) + pi)  / (2.0 * pi) # longitude angle 
-        i.uv[1] = acos(t_dir[1]) /  pi                           # latitude angle
+        p_obj = add(o, t_dir)
+        i.n = VecMul(self.xform, p_obj)
+        i.uv[0] = (atan2(p_obj[2], p_obj[0]) + pi)  / (2.0 * pi) # longitude angle 
+        i.uv[1] = acos(p_obj[1]) /  pi                         # latitude angle
 
         return True
 
@@ -314,7 +341,7 @@ class Image:
 
     def Display(self):
         display_str = ""
-        for y in range(self.yres):
+        for y in reversed(range(self.yres)):
             display_str += "{" + " ".join(self.img_buf[y]) + "} " 
         
         self.tk_img.put(display_str, (0,0))
@@ -325,7 +352,7 @@ class Image:
                                    int(Saturate(c[1]) * 255.0), 
                                    int(Saturate(c[2]) * 255.0))
 
-        self.img_buf[y][x] = color
+        self.img_buf[int(y)][int(x)] = color
 
 
 
@@ -342,7 +369,8 @@ image = Image(IMAGE_WIDTH, IMAGE_HEIGHT)
 #
 scene = Scene()
 scene.camera.SetRes(IMAGE_WIDTH, IMAGE_HEIGHT)
-scene.camera.SetXForm(TranslateMatrix([0, 0, -3]))
+scene.camera.SetXForm(TranslateMatrix([0, 0, -6]))
+scene.camera.SetFov(45)
 
 sphere = Sphere()
 scale = ScaleMatrix([1.0, 1.0, 1.0])
@@ -353,15 +381,23 @@ scene.objects.append(sphere)
 
 sphere = Sphere()
 scale = ScaleMatrix([1.0, 2.0, 1.0])
-translate = TranslateMatrix([1.0, 0.0, 0.0])
+translate = TranslateMatrix([.9, 0.0, 1])
 xform = matmul(translate, scale)
 sphere.SetXForm(xform)
 scene.objects.append(sphere)
 
-translate = TranslateMatrix([5.0, -3.0, -5.0])
+translate = TranslateMatrix([10.0, 10.0, -10.0])
 light = PointLight()
 light.SetXForm(translate)
+light.color = [1.0, 1.0, 1.0]
 scene.lights.append(light)
+
+translate = TranslateMatrix([-10.0, -2.0, 0.0])
+light = PointLight()
+light.SetXForm(translate)
+light.color = [.3, .3, .3]
+scene.lights.append(light)
+
 
 #
 # Render and display 
