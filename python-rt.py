@@ -11,14 +11,17 @@ from numpy import add as add
 from numpy import subtract as sub
 from numpy import absolute as absolute
 from numpy import linalg as LA
-from math import pi, tan, inf, sqrt, acos, atan2
+from math import pi, cos, sin, tan, inf, sqrt, acos, atan2
+from copy import deepcopy
 
 ################################################################################
 ### Globals
 ################################################################################
 
 EPSILON = sys.float_info.epsilon
+RAY_TRACE_EPSILON = .001
 IMAGE_WIDTH, IMAGE_HEIGHT = 512, 512
+MAX_RAY_RECURSION_DEPTH = 10
 DEFAULT_MATERIAL = None
 
 ################################################################################
@@ -56,6 +59,15 @@ def ScaleMatrix(p):
             [0,    0,    p[2], 0],
             [0,    0,    0,    1]])
 
+def RotXMatrix(angle):
+    sin_angle = sin(angle)
+    cos_angle = cos(angle)
+
+    return([[1,    0,          0,         0],
+            [0,    sin_angle, -cos_angle, 0],
+            [0,    cos_angle,  sin_angle, 0],
+            [0,    0,          0,         1]])
+
 
 def VecMul(m, v):
     return([m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
@@ -74,15 +86,21 @@ def Render(image, scene):
 
     print("Rendering ... ", end = "" )
 
-    i = Intersection(scene)
+    
+    int_stack = [ ] 
+    for x in range(MAX_RAY_RECURSION_DEPTH):
+        new_int = Intersection(scene)
+        if(len(int_stack) > 0):
+            int_stack[-1].next = new_int
+            new_int.prev = int_stack[-1]
+        int_stack.append(new_int)
 
+    i = int_stack[0]
     for y in range(image.yres):
         for x in range(image.xres):
-    #for y in ([63.5]):
-    #    for x in ([63.5]):
             scene.camera.GenPrimaryRay(i.ray, x, y)
 
-            if(scene.Trace(i)):
+            if(i.Trace()):
                 i.CalcAll()
                 i.object.material.Shade(i)
 
@@ -115,10 +133,31 @@ class Intersection:
 
         self.color = [1, 1, 1]      # Reflected at interesection
         self.opacity = [1, 1, 1]    # Colored opacity at intersection
+        self.prev = None            # Previous intersection in recurse ray trace
+        self.next = None            # Next intersection in recurse ray trace
 
     def CalcAll(self):
         if(self.object != None):
             self.object.CalcAllIntersection(self)
+
+    def Trace(self):
+        return(self.scene.Trace(self))
+
+    def Save(self):
+        self.save_ray = deepcopy(self.ray)
+        self.save_dist = self.dist
+        self.save_p = self.p
+        self.save_n = self.n
+        self.save_uv = [ *self.uv ]
+        self.save_object = self.object
+
+    def Restore(self):
+        self.ray = self.save_ray
+        self.dist = self.save_dist
+        self.p = self.save_p
+        self.n = self.save_n
+        self.uv = self.save_uv
+        self.object = self.save_object
        
 class Material:
     def __init__(self):
@@ -152,11 +191,22 @@ class CheckerSimple(Material):
         e_dot_n = dot(e_norm, n_norm)
         h = Normalize(add(e_norm, mul(-2.0 * e_dot_n, n_norm)))
 
+
         diffuse = [0.0, 0.0, 0.0]
         specular = [0.0, 0.0, 0.0]
         for light in i.scene.lights:
             light_info = light.GetLightSampleInfo(i)
-            l_norm = Normalize(light_info.dir)
+            light_dist = LA.norm(light_info.dir)
+            l_norm = mul(light_info.dir, 1.0 / light_dist)
+
+
+            # Trace shadows
+            i.next.ray.dir = l_norm
+            i.next.ray.o = add(i.p, mul(RAY_TRACE_EPSILON, l_norm))
+            if(i.next.Trace()):
+                if(i.next.dist < light_dist):
+                    continue;
+
 
             l_dot_n = dot(l_norm, n_norm)
             if(l_dot_n > 0.0):
@@ -165,15 +215,6 @@ class CheckerSimple(Material):
                 spec = l_dot_n * pow(dot(h, l_norm), self.spec_exp)
                 specular = add(specular, mul(spec, light_info.emission))
                 
-
-            #print("i.p =", i.p)
-            #print("i.n =", i.n)
-            #print("n_norm =", n_norm)
-            #print("light_info.dir =", light_info.dir)
-            #print("l_norm =", l_norm)
-            #print("l_dot_n =", l_dot_n)
-            #print("diffuse =", diffuse)
-
         i.color = add(mul(i.color, diffuse), mul(self.ks, specular))
         i.opacity = [1, 1, 1]
 
@@ -295,6 +336,50 @@ class Sphere(Object):
     def CalcAllIntersection(self, i):
         return
 
+
+# A rectange in the XZ plane, with ranges [-1, 1] in X and Z in object space
+class Rectangle(Object):
+    def __init__(self):
+        Object.__init__(self)
+
+    def Intersect(self, i):
+
+        # Transform ray into object space
+        o = PointMul(self.inv_xform, i.ray.o)
+        dir = Normalize(VecMul(self.inv_xform, i.ray.dir))
+
+
+        # Check if is ray is pointed at the plane
+        if(o[1] > 0 and dir[1] > 0 or
+           o[1] < 0 and dir[1] < 0):
+            return(False)
+
+        # No intersection if ray is parallel to XZ plane
+        if abs(dir[1]) < EPSILON:
+            return(False)
+
+        ratio = -o[1] / dir[1]
+        p = [ ratio * dir[0] + o[0],
+               0,
+              ratio * dir[2] + o[2]]
+
+        if(p[0] < -1 or p[0] > 1):
+            return(False)
+
+        if(p[2] < -1 or p[2] > 1):
+            return(False)
+
+        p[1] = 0
+        i.p = PointMul(self.xform, p)
+        i.dist = LA.norm(sub(i.ray.o, i.p))
+        i.n = [ self.xform[0][1], self.xform[1][1], self.xform[2][1] ]
+        i.uv = [(p[0] + 1) / 2, (p[2] + 1) / 2]
+        return(True)
+
+    def CalcAllIntersection(self, i):
+        return
+
+
 class Scene:
     def __init__(self):
         self.camera = Camera()
@@ -309,8 +394,13 @@ class Scene:
                 if(i.dist < min_dist):
                     min_dist = i.dist
                     i.object = object
+                    i.Save()
 
-        return(i.object != None)
+        if(i.object != None):
+            i.Restore()
+            return(True)
+
+        return(False)
 
 #
 # Using Tk and PhotoImage to make a canvas where we can set pixels individually.
@@ -372,30 +462,49 @@ scene.camera.SetRes(IMAGE_WIDTH, IMAGE_HEIGHT)
 scene.camera.SetXForm(TranslateMatrix([0, 0, -6]))
 scene.camera.SetFov(45)
 
+
 sphere = Sphere()
 scale = ScaleMatrix([1.0, 1.0, 1.0])
-translate = TranslateMatrix([-1.0, 0.0, 0.0])
-xform = matmul(translate, scale)
+translate = TranslateMatrix([0.0, 0.0, 0.0])
+rot = RotXMatrix(-pi / 4)
+xform = matmul(matmul(translate, scale), rot)
 sphere.SetXForm(xform)
 scene.objects.append(sphere)
 
+material = CheckerSimple()
+material.color1 = [.2, .2, 1]
 sphere = Sphere()
-scale = ScaleMatrix([1.0, 2.0, 1.0])
-translate = TranslateMatrix([.9, 0.0, 1])
+sphere.material = material
+scale = ScaleMatrix([0.5, 0.5, 0.5])
+translate = TranslateMatrix([0.5, 0.2, -3])
 xform = matmul(translate, scale)
 sphere.SetXForm(xform)
-scene.objects.append(sphere)
+#scene.objects.append(sphere)
 
-translate = TranslateMatrix([10.0, 10.0, -10.0])
+material = CheckerSimple()
+material.color0 = [.4, .4, .4]
+material.color1 = [1.0, 1.0, 1.0]
+rect = Rectangle()
+rect.material = material
+translate = TranslateMatrix([0.0, -1, 0])
+scale = ScaleMatrix([6, 1, 6])
+#rot = RotXMatrix(0)
+#xform = matmul(matmul(translate, scale), rot)
+xform = matmul(translate, scale)
+pprint(xform)
+rect.SetXForm(xform)
+scene.objects.append(rect)
+
+translate = TranslateMatrix([5.0, 10.0, -10])
 light = PointLight()
 light.SetXForm(translate)
-light.color = [1.0, 1.0, 1.0]
+light.color = [1.0] * 3
 scene.lights.append(light)
 
-translate = TranslateMatrix([-10.0, -2.0, 0.0])
+translate = TranslateMatrix([-10.0, 1.0, -2.0])
 light = PointLight()
 light.SetXForm(translate)
-light.color = [.3, .3, .3]
+light.color = [0.8] * 3
 scene.lights.append(light)
 
 
