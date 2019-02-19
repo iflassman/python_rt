@@ -21,7 +21,7 @@ from copy import deepcopy
 
 EPSILON = sys.float_info.epsilon
 RAY_TRACE_EPSILON = .001
-IMAGE_WIDTH, IMAGE_HEIGHT = 1024, 768
+IMAGE_WIDTH, IMAGE_HEIGHT = 128, 128
 MAX_RAY_RECURSION_DEPTH = 5
 DEFAULT_MATERIAL = None
 DEG_TO_RAD = pi / 180
@@ -32,6 +32,9 @@ DEG_TO_RAD = pi / 180
 
 def Radians(angle):
     return(DEG_TO_RAD * angle)
+
+def FaceForward(n, l):
+    return
 
 def Normalize(v):
     mag = np.linalg.norm(v)
@@ -158,7 +161,8 @@ def Render(image, scene):
         PercentDone = 100.0 * y / image.yres
         elapsed_time = time() - start_time
     
-        print("\rRendering ... %4.1f%% (%ds)" % (PercentDone, int(elapsed_time)), 
+        print("\rRendering ... %4.1f%% (%ds)" % 
+              (PercentDone, int(elapsed_time)), 
               end = "", flush = True )
         for x in range(image.xres):
             scene.camera.GenPrimaryRay(i.ray, x, y)
@@ -169,7 +173,8 @@ def Render(image, scene):
                 image.SetPixel(x, y, (0, 0, 0))
 
     elapsed_time = time() - start_time
-    print("\rRendering ... Done (%ds)          " % int(elapsed_time), flush = True)
+    print("\rRendering ... Done (%ds)          " % int(elapsed_time), 
+          flush = True)
 
 ################################################################################
 ### Ray and Intersection Classes
@@ -246,6 +251,26 @@ class ConstTex2D(Texture2D):
     def Sample(self, uv):
         return(self.color)
 
+class ImageTex2D(Texture2D):
+    def __init__(self, filename, scale = 1.0):
+        Texture2D.__init__(self)
+
+        self.filename = filename
+        self.image = PhotoImage(file = filename)
+        self.val_scale = scale
+
+        self.xres = self.image.width()
+        self.yres = self.image.height()
+        self.norm_scale = scale / 255.0
+
+    def Sample(self, uv):
+
+        x = int(self.xres * uv[0]) % self.xres
+        y = self.yres - int(self.yres * uv[1]) % self.yres - 1
+
+        return(mul(self.image.get(x, y), self.norm_scale))
+        
+
 class CheckerTex2D(Texture2D):
 
     def __init__(self, **kwargs):
@@ -280,10 +305,11 @@ class Material:
 class SimpleMaterial(Material):
     def __init__(self, texture = ConstTex2D()):
         Material.__init__(self)
-        self.ks =  [.7] * 3
-        self.kr =  [0.0] * 3
-        self.spec_exp = 15.0
-        self.texture = texture
+        self.ks       =  [.7] * 3    # specular coefficient
+        self.kr       =  [0.0] * 3   # reflection coefficient
+        self.spec_exp = 15.0         # specular exponent (inverse roughness)
+        self.ior      = 1.0          # Index of refraction
+        self.texture  = texture      
 
     def Shade(self, i):
         i.color = self.texture.Sample(i.uv)
@@ -614,6 +640,7 @@ def BuildScene():
                                     ufreq = 10,
                                     vfreq = 1)
 
+    image_tex = ImageTex2D("./tex/reddish.png")
 
     # Sphere 1
     material = SimpleMaterial(texture = blue_checker_tex)
@@ -637,7 +664,7 @@ def BuildScene():
     scene.objects.append(sphere)
 
     # Ground plane
-    material = SimpleMaterial(texture = gray_white_tex)
+    material = SimpleMaterial(texture = image_tex)
     material.kr = [.5] * 3
     rect = Rectangle()
     rect.material = material
