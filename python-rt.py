@@ -20,7 +20,7 @@ from copy import deepcopy
 
 EPSILON = sys.float_info.epsilon
 RAY_TRACE_EPSILON = .001
-IMAGE_WIDTH, IMAGE_HEIGHT = 128, 128
+IMAGE_WIDTH, IMAGE_HEIGHT = 512, 512
 MAX_RAY_RECURSION_DEPTH = 10
 DEFAULT_MATERIAL = None
 DEG_TO_RAD = pi / 180
@@ -212,24 +212,51 @@ class Material:
         self.color = [1, 1, 1]
         self.opacity = [1, 1, 1]
 
-class CheckerSimple(Material):
-    def __init__(self, ufreq = 20, vfreq = 10):
-        Material.__init__(self)
-        self.ufreq = ufreq
-        self.vfreq = vfreq
-        self.color0 = [.2, .2, .2]
-        self.color1 = [1, .2, .2]
-        self.ks =  [.7, .7, .7]
-        self.spec_exp = 15.0
+class Texture2D:
+    def __init__(self, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
-    def Shade(self, i):
-        utile = int(self.ufreq * i.uv[0])
-        vtile = int(self.vfreq * i.uv[1])
+    def Sample(self, uv):
+        return([0.0] * 4)
+
+class ConstTex2D(Texture2D):
+    def __init__(self, color = [1, 1, 1]):
+        Texture2D.__init__(self)
+        self.color = color
+
+    def Sample(self, uv):
+        return(self.color)
+
+class CheckerTex2D(Texture2D):
+
+    def __init__(self, **kwargs):
+        self.ufreq = 10
+        self.vfreq = 10
+        self.color0 = [0] * 3
+        self.color1 = [0] * 3
+
+        Texture2D.__init__(self, **kwargs)
+
+    def Sample(self, uv):
+        utile = int(self.ufreq * uv[0])
+        vtile = int(self.vfreq * uv[1])
 
         if((utile) % 2 ^ (vtile % 2)):
-            i.color = self.color0
-        else:
-            i.color = self.color1
+            return(self.color0)
+
+        return(self.color1)
+
+
+class SimpleMaterial(Material):
+    def __init__(self, texture = ConstTex2D()):
+        Material.__init__(self)
+        self.ks =  [.7, .7, .7]
+        self.spec_exp = 15.0
+        self.texture = texture
+
+    def Shade(self, i):
+        i.color = self.texture.Sample(i.uv)
 
         n_norm = Normalize(i.n)
         e_norm = Normalize(i.ray.dir)
@@ -264,7 +291,7 @@ class CheckerSimple(Material):
         i.opacity = [1, 1, 1]
 
 
-DEFAULT_MATERIAL = CheckerSimple()
+DEFAULT_MATERIAL = SimpleMaterial()
 
 class Object:
     def __init__(self):
@@ -508,15 +535,32 @@ scene.camera.SetXForm(ComboXForm(translate = [0, 3, -5],
                                  x_angle = Radians(30)))
 scene.camera.SetFov(55)
 
+gray_white_tex = CheckerTex2D(color0 = [.2, .2, .2],
+                              color1 = [.8, .8, .8],
+                              ufreq = 20,
+                              vfreq = 20)
 
+red_checker_tex = CheckerTex2D(color0 = [0.0, 0, 0],
+                               color1 = [1.0, 0, 0],
+                               ufreq = 1,
+                               vfreq = 10)
+
+blue_checker_tex = CheckerTex2D(color0 = [0.0, 0, 0],
+                                color1 = [0.0, 0, 1],
+                                ufreq = 10,
+                                vfreq = 1)
+
+
+material = SimpleMaterial(texture = blue_checker_tex)
 sphere = Sphere()
+sphere.material = material
 sphere.SetXForm(ComboXForm(translate = [-1.0, 0, 0.0], 
                            scale = [1.0] * 3, 
-                           z_angle = pi / 4))
+                           z_angle = 0))
 scene.objects.append(sphere)
 
 
-material = CheckerSimple()
+material = SimpleMaterial(texture = red_checker_tex)
 material.color1 = [.2, .2, 1]
 sphere = Sphere()
 sphere.material = material
@@ -524,7 +568,7 @@ sphere.SetXForm(ComboXForm(translate = [1.0, 0, 0],
                            scale = [1.0] * 3))
 scene.objects.append(sphere)
 
-material = CheckerSimple()
+material = SimpleMaterial(texture = gray_white_tex)
 material.color0 = [.4, .4, .4]
 material.color1 = [1.0, 1.0, 1.0]
 rect = Rectangle()
