@@ -1,5 +1,6 @@
 import numpy as np
 import sys
+from time import time
 from tkinter import Tk, Canvas, PhotoImage, mainloop
 from math import sin
 from pprint import pprint
@@ -20,7 +21,7 @@ from copy import deepcopy
 
 EPSILON = sys.float_info.epsilon
 RAY_TRACE_EPSILON = .001
-IMAGE_WIDTH, IMAGE_HEIGHT = 128, 128
+IMAGE_WIDTH, IMAGE_HEIGHT = 1024, 768
 MAX_RAY_RECURSION_DEPTH = 5
 DEFAULT_MATERIAL = None
 DEG_TO_RAD = pi / 180
@@ -152,10 +153,13 @@ def Render(image, scene):
         int_stack.append(new_int)
 
     i = int_stack[0]
+    start_time = time()
     for y in range(image.yres):
         PercentDone = 100.0 * y / image.yres
+        elapsed_time = time() - start_time
     
-        print("\rRendering ... %4.1f%%" % PercentDone, end = "", flush = True )
+        print("\rRendering ... %4.1f%% (%ds)" % (PercentDone, int(elapsed_time)), 
+              end = "", flush = True )
         for x in range(image.xres):
             scene.camera.GenPrimaryRay(i.ray, x, y)
 
@@ -164,7 +168,8 @@ def Render(image, scene):
             else:
                 image.SetPixel(x, y, (0, 0, 0))
 
-    print("\rRendering ... Done    ", flush = True)
+    elapsed_time = time() - start_time
+    print("\rRendering ... Done (%ds)          " % int(elapsed_time), flush = True)
 
 ################################################################################
 ### Ray and Intersection Classes
@@ -288,7 +293,6 @@ class SimpleMaterial(Material):
         e_dot_n = dot(e_norm, n_norm)
         r = Normalize(add(e_norm, mul(-2.0 * e_dot_n, n_norm)))
 
-
         diffuse = (0.0, 0.0, 0.0)
         specular = (0.0, 0.0, 0.0)
         for light in i.scene.lights:
@@ -349,10 +353,12 @@ class Sphere(Object):
 
         # Transform ray into object space
         o = PointMul(self.inv_xform, i.ray.o)
-        dir = Normalize(VecMul(self.inv_xform, i.ray.dir))
+        dir = VecMul(self.inv_xform, i.ray.dir)
+        dir_n = Normalize(dir)
+
 
         # Assume sphere is centered at origin with radius 1.0 in object space
-        b = 2.0 * dot(dir, o)
+        b = 2.0 * dot(dir_n, o)
         c = dot(o, o) - 1
 
         # Use quadratic formula to solve for t
@@ -377,9 +383,9 @@ class Sphere(Object):
             else:
                 return(False) # ray intersection are both behind ray
 
-        t_dir = mul(t, dir) # scaled dir vec in global space
+        t_dir = mul(t, dir_n) # scaled dir vec in global space
         t_dir_glob = VecMul(self.xform, t_dir) # in global space
-        i.dist = LA.norm(t_dir)
+        i.dist = LA.norm(t_dir_glob)
         i.p = add(i.ray.o, t_dir_glob)
         p_obj = add(o, t_dir)
         i.n = VecMul(self.xform, p_obj)
@@ -557,6 +563,9 @@ class Image:
 
         self.canvas.create_image((xres/2, yres/2), image=self.tk_img, state="normal")
 
+    def Write(self, filename):
+        self.tk_img.write(filename)
+
     def Display(self):
         display_str = ""
         for y in reversed(range(self.yres)):
@@ -592,8 +601,8 @@ def BuildScene():
     # Create some textures
     gray_white_tex = CheckerTex2D(color0 = [.2, .2, .2],
                                   color1 = [.8, .8, .8],
-                                  ufreq = 6,
-                                  vfreq = 6)
+                                  ufreq = 10,
+                                  vfreq = 10)
 
     red_checker_tex = CheckerTex2D(color0 = [0.0, 0, 0],
                                    color1 = [1.0, 0, 0],
@@ -612,7 +621,7 @@ def BuildScene():
     sphere = Sphere()
     sphere.material = material
     sphere.SetXForm(ComboXForm(translate = [-1.0, 0, 0.0], 
-                               scale = [1.0] * 3, 
+                               scale = [1] * 3, 
                                z_angle = 0))
     scene.objects.append(sphere)
 
@@ -623,13 +632,13 @@ def BuildScene():
     material.kr = [.4] * 3
     sphere = Sphere()
     sphere.material = material
-    sphere.SetXForm(ComboXForm(translate = [1.0, 0, 0], 
-                               scale = [1.0] * 3))
+    sphere.SetXForm(ComboXForm(translate = [.7, 0, -.7], 
+                               scale = [.7] * 3))
     scene.objects.append(sphere)
 
     # Ground plane
     material = SimpleMaterial(texture = gray_white_tex)
-    material.kr = [.9] * 3
+    material.kr = [.5] * 3
     rect = Rectangle()
     rect.material = material
     rect.SetXForm(ComboXForm(translate = [0.0, -1, 0],
@@ -663,5 +672,6 @@ scene = BuildScene()
 #
 Render(image, scene)
 image.Display()
+image.Write('render.png')
 mainloop()
 
