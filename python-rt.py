@@ -20,7 +20,7 @@ from copy import deepcopy
 
 EPSILON = sys.float_info.epsilon
 RAY_TRACE_EPSILON = .001
-IMAGE_WIDTH, IMAGE_HEIGHT = 512, 512
+IMAGE_WIDTH, IMAGE_HEIGHT = 128, 128
 MAX_RAY_RECURSION_DEPTH = 5
 DEFAULT_MATERIAL = None
 DEG_TO_RAD = pi / 180
@@ -47,6 +47,20 @@ def Saturate(v):
 
 def GreaterThan3(v, a):
     return(v[0] >= a and v[1] > a and v[2] > a)
+
+def VecMul(m, v):
+    return([m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+            m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
+            m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2]])
+
+def PointMul(m, p):
+    return([m[0][0] * p[0] + m[0][1] * p[1] + m[0][2] * p[2] + m[0][3],
+            m[1][0] * p[0] + m[1][1] * p[1] + m[1][2] * p[2] + m[1][3],
+            m[2][0] * p[0] + m[2][1] * p[1] + m[2][2] * p[2] + m[2][3]])
+
+################################################################################
+### Transform Matrices
+################################################################################
 
 def IdentityMatrix():
     return([[1, 0, 0, 0],
@@ -115,22 +129,17 @@ def ComboXForm(**kwargs):
     return(ret)
 
 
-def VecMul(m, v):
-    return([m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
-            m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
-            m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2]])
-
-def PointMul(m, p):
-    return([m[0][0] * p[0] + m[0][1] * p[1] + m[0][2] * p[2] + m[0][3],
-            m[1][0] * p[0] + m[1][1] * p[1] + m[1][2] * p[2] + m[1][3],
-            m[2][0] * p[0] + m[2][1] * p[1] + m[2][2] * p[2] + m[2][3]])
+################################################################################
+### Render 
+################################################################################
 
 def Render(image, scene):
     #
     # Put all your rendering code here
     #
 
-    print("Rendering ... ", end = "" )
+
+    PercentDone = 0.0
 
     
     int_stack = [ ] 
@@ -144,6 +153,9 @@ def Render(image, scene):
 
     i = int_stack[0]
     for y in range(image.yres):
+        PercentDone = 100.0 * y / image.yres
+    
+        print("\rRendering ... %4.1f%%" % PercentDone, end = "", flush = True )
         for x in range(image.xres):
             scene.camera.GenPrimaryRay(i.ray, x, y)
 
@@ -152,10 +164,10 @@ def Render(image, scene):
             else:
                 image.SetPixel(x, y, (0, 0, 0))
 
-    print("Done")
+    print("\rRendering ... Done    ", flush = True)
 
 ################################################################################
-### Classes
+### Ray and Intersection Classes
 ################################################################################
 
 class Ray:
@@ -209,13 +221,9 @@ class Intersection:
         self.uv = self.save_uv
         self.object = self.save_object
        
-class Material:
-    def __init__(self):
-        return
-
-    def Shade(self, i):
-        self.color = [1, 1, 1]
-        self.opacity = [1, 1, 1]
+################################################################################
+### Textures
+################################################################################
 
 class Texture2D:
     def __init__(self, **kwargs):
@@ -251,6 +259,18 @@ class CheckerTex2D(Texture2D):
             return(self.color0)
 
         return(self.color1)
+
+################################################################################
+### Materials
+################################################################################
+
+class Material:
+    def __init__(self):
+        return
+
+    def Shade(self, i):
+        self.color = [1, 1, 1]
+        self.opacity = [1, 1, 1]
 
 class SimpleMaterial(Material):
     def __init__(self, texture = ConstTex2D()):
@@ -304,6 +324,10 @@ class SimpleMaterial(Material):
 
 DEFAULT_MATERIAL = SimpleMaterial()
 
+################################################################################
+### Objects
+################################################################################
+
 class Object:
     def __init__(self):
         self.xform = IdentityMatrix()
@@ -317,56 +341,6 @@ class Object:
     def Origin(self):
         return([self.xform[0][3], self.xform[1][3], self.xform[2][3]])
 
-class LightInfo:
-    def __init__(self, emission, p, dir):
-        self.emission = emission
-        self.p = p
-        self.dir = dir
-
-class Light(Object):
-    def __init__(self, color = [1, 1, 1]):
-        Object.__init__(self)
-        self.color = color
-
-class PointLight(Light):
-    def __init__(self, color = [1, 1, 1]):
-        Light.__init__(self, color)
-
-    def GetLightSampleInfo(self, i):
-        return(LightInfo(self.color,
-                         self.Origin(),
-                         sub(self.Origin(), i.p)))
-
-class Camera(Object):
-    def __init__(self):
-        Object.__init__(self)
-        self.xres = 512 
-        self.yres = 512
-        self.fov = pi / 2   # Field of view of camera in radians
-
-    def SetRes(self, xres, yres):
-        self.xres = xres 
-        self.yres = yres
-
-    # Returns a ray through the center of the pixel at (x, y)
-    def GenPrimaryRay(self, ray, x, y):
-        half_xres = self.xres / 2
-        half_yres = self.yres / 2
-
-        focal_dist = 1.0 / tan(self.fov / 2)
-
-        # Ray direction pointing toward center of the pixel in the image plane
-        dir = [(x + 0.5 - half_xres) / half_xres,
-               (y + 0.5 - half_yres) / half_xres, # assuming square pixel aspect
-               focal_dist]
-
-        # Transform ray dir into global space
-        ray.Set(self.Origin(), VecMul(self.xform, dir))
-
-    # Set Field of View in degrees
-    def SetFov(self, angle): 
-        self.fov = angle * pi / 180.0
-       
 class Sphere(Object):
     def __init__(self):
         Object.__init__(self)
@@ -417,7 +391,6 @@ class Sphere(Object):
     def CalcAllIntersection(self, i):
         return
 
-
 # A rectange in the XZ plane, with ranges [-1, 1] in X and Z in object space
 class Rectangle(Object):
     def __init__(self):
@@ -461,6 +434,69 @@ class Rectangle(Object):
         return
 
 
+################################################################################
+### Lights
+################################################################################
+
+class LightInfo:
+    def __init__(self, emission, p, dir):
+        self.emission = emission
+        self.p = p
+        self.dir = dir
+
+class Light(Object):
+    def __init__(self, color = [1, 1, 1]):
+        Object.__init__(self)
+        self.color = color
+
+class PointLight(Light):
+    def __init__(self, color = [1, 1, 1]):
+        Light.__init__(self, color)
+
+    def GetLightSampleInfo(self, i):
+        return(LightInfo(self.color,
+                         self.Origin(),
+                         sub(self.Origin(), i.p)))
+
+################################################################################
+### Camera
+################################################################################
+
+class Camera(Object):
+    def __init__(self):
+        Object.__init__(self)
+        self.xres = 512 
+        self.yres = 512
+        self.fov = pi / 2   # Field of view of camera in radians
+
+    def SetRes(self, xres, yres):
+        self.xres = xres 
+        self.yres = yres
+
+    # Returns a ray through the center of the pixel at (x, y)
+    def GenPrimaryRay(self, ray, x, y):
+        half_xres = self.xres / 2
+        half_yres = self.yres / 2
+
+        focal_dist = 1.0 / tan(self.fov / 2)
+
+        # Ray direction pointing toward center of the pixel in the image plane
+        dir = [(x + 0.5 - half_xres) / half_xres,
+               (y + 0.5 - half_yres) / half_xres, # assuming square pixel aspect
+               focal_dist]
+
+        # Transform ray dir into global space
+        ray.Set(self.Origin(), VecMul(self.xform, dir))
+
+    # Set Field of View in degrees
+    def SetFov(self, angle): 
+        self.fov = angle * pi / 180.0
+       
+
+################################################################################
+### Scene
+################################################################################
+
 class Scene:
     def __init__(self):
         self.camera = Camera()
@@ -489,6 +525,10 @@ class Scene:
             return(True)
 
         return(False)
+
+################################################################################
+### Image
+################################################################################
 
 #
 # Using Tk and PhotoImage to make a canvas where we can set pixels individually.
@@ -534,83 +574,94 @@ class Image:
 
 
 
+################################################################################
+### Build scene
+################################################################################
+
+def BuildScene():
+    scene = Scene()
+
+    # Setup camera
+    scene.camera.SetRes(IMAGE_WIDTH, IMAGE_HEIGHT)
+    scene.camera.SetXForm(ComboXForm(translate = [0, 3, -5],
+                                     x_angle = Radians(30)))
+    scene.camera.SetFov(55)
+
+
+
+    # Create some textures
+    gray_white_tex = CheckerTex2D(color0 = [.2, .2, .2],
+                                  color1 = [.8, .8, .8],
+                                  ufreq = 6,
+                                  vfreq = 6)
+
+    red_checker_tex = CheckerTex2D(color0 = [0.0, 0, 0],
+                                   color1 = [1.0, 0, 0],
+                                   ufreq = 1,
+                                   vfreq = 10)
+
+    blue_checker_tex = CheckerTex2D(color0 = [0.0, 0, 0],
+                                    color1 = [0.0, 0, 1],
+                                    ufreq = 10,
+                                    vfreq = 1)
+
+
+    # Sphere 1
+    material = SimpleMaterial(texture = blue_checker_tex)
+    material.kr = [.4] * 3
+    sphere = Sphere()
+    sphere.material = material
+    sphere.SetXForm(ComboXForm(translate = [-1.0, 0, 0.0], 
+                               scale = [1.0] * 3, 
+                               z_angle = 0))
+    scene.objects.append(sphere)
+
+
+    # Sphere 2
+    material = SimpleMaterial(texture = red_checker_tex)
+    material.color1 = [.2, .2, 1]
+    material.kr = [.4] * 3
+    sphere = Sphere()
+    sphere.material = material
+    sphere.SetXForm(ComboXForm(translate = [1.0, 0, 0], 
+                               scale = [1.0] * 3))
+    scene.objects.append(sphere)
+
+    # Ground plane
+    material = SimpleMaterial(texture = gray_white_tex)
+    material.kr = [.9] * 3
+    rect = Rectangle()
+    rect.material = material
+    rect.SetXForm(ComboXForm(translate = [0.0, -1, 0],
+                            scale = [6, 1, 6]))
+    scene.objects.append(rect)
+
+    # Light 1
+    light = PointLight()
+    light.SetXForm(ComboXForm(translate = [5.0, 10.0, -10]))
+    light.color = [1.0] * 3
+    scene.lights.append(light)
+
+    # Light 2
+    light = PointLight()
+    light.SetXForm(ComboXForm(translate = [-5.0, 10.0, 1]))
+    light.color = [0.2] * 3
+    scene.lights.append(light)
+
+    return(scene)
 
 ################################################################################
 ### Main
 ################################################################################
 
 image = Image(IMAGE_WIDTH, IMAGE_HEIGHT)
-
-
-#
-# Build scene
-#
-scene = Scene()
-scene.camera.SetRes(IMAGE_WIDTH, IMAGE_HEIGHT)
-scene.camera.SetXForm(ComboXForm(translate = [0, 3, -5],
-                                 x_angle = Radians(30)))
-scene.camera.SetFov(55)
-
-gray_white_tex = CheckerTex2D(color0 = [.2, .2, .2],
-                              color1 = [.8, .8, .8],
-                              ufreq = 6,
-                              vfreq = 6)
-
-red_checker_tex = CheckerTex2D(color0 = [0.0, 0, 0],
-                               color1 = [1.0, 0, 0],
-                               ufreq = 1,
-                               vfreq = 10)
-
-blue_checker_tex = CheckerTex2D(color0 = [0.0, 0, 0],
-                                color1 = [0.0, 0, 1],
-                                ufreq = 10,
-                                vfreq = 1)
-
-
-material = SimpleMaterial(texture = blue_checker_tex)
-material.kr = [.4] * 3
-sphere = Sphere()
-sphere.material = material
-sphere.SetXForm(ComboXForm(translate = [-1.0, 0, 0.0], 
-                           scale = [1.0] * 3, 
-                           z_angle = 0))
-scene.objects.append(sphere)
-
-
-material = SimpleMaterial(texture = red_checker_tex)
-material.color1 = [.2, .2, 1]
-material.kr = [.4] * 3
-sphere = Sphere()
-sphere.material = material
-sphere.SetXForm(ComboXForm(translate = [1.0, 0, 0], 
-                           scale = [1.0] * 3))
-scene.objects.append(sphere)
-
-material = SimpleMaterial(texture = gray_white_tex)
-material.kr = [.9] * 3
-rect = Rectangle()
-rect.material = material
-rect.SetXForm(ComboXForm(translate = [0.0, -1, 0],
-                        scale = [6, 1, 6]))
-scene.objects.append(rect)
-
-light = PointLight()
-light.SetXForm(ComboXForm(translate = [5.0, 10.0, -10]))
-light.color = [1.0] * 3
-scene.lights.append(light)
-
-light = PointLight()
-light.SetXForm(ComboXForm(translate = [-5.0, 10.0, 1]))
-light.color = [0.2] * 3
-scene.lights.append(light)
+scene = BuildScene()
 
 
 #
 # Render and display 
 #
 Render(image, scene)
-
 image.Display()
-
 mainloop()
 
