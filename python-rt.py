@@ -23,10 +23,14 @@ RAY_TRACE_EPSILON = .001
 IMAGE_WIDTH, IMAGE_HEIGHT = 128, 128
 MAX_RAY_RECURSION_DEPTH = 10
 DEFAULT_MATERIAL = None
+DEG_TO_RAD = pi / 180
 
 ################################################################################
 ### Utility Functions
 ################################################################################
+
+def Radians(angle):
+    return(DEG_TO_RAD * angle)
 
 def Normalize(v):
     mag = np.linalg.norm(v)
@@ -64,49 +68,51 @@ def RotXMatrix(angle):
     cos_angle = cos(angle)
 
     return([[1,    0,          0,         0],
-            [0,    sin_angle, -cos_angle, 0],
-            [0,    cos_angle,  sin_angle, 0],
+            [0,    cos_angle, -sin_angle, 0],
+            [0,    sin_angle,  cos_angle, 0],
             [0,    0,          0,         1]])
 
 def RotYMatrix(angle):
     sin_angle = sin(angle)
     cos_angle = cos(angle)
 
-    return([[sin_angle,    0,  -cos_angle, 0],
+    return([[cos_angle,    0,  -sin_angle, 0],
             [0,            1,  0,          0],
-            [cos_angle,    0,  sin_angle,  0],
+            [sin_angle,    0,  cos_angle,  0],
             [0,            0,  0,          1]])
 
 def RotZMatrix(angle):
     sin_angle = sin(angle)
     cos_angle = cos(angle)
 
-    return( [sin_angle, -cos_angle, 0, 0],
-            [cos_angle,  sin_angle, 0, 0],
+    return( [cos_angle, -sin_angle, 0, 0],
+            [sin_angle,  cos_angle, 0, 0],
             [0,          0,         1, 0],
             [0,          0,         0, 1])
 
-def ConcatMatrices(matrices):
-    ret = matrices[-1]
-    print("....")
-    pprint(ret)
-    for i in reversed(range(len(matrices) - 1)):
-        print("i = ", i)
-        ret = mul(matrices[i], ret)
-        pprint(ret)
+def ComboXForm(**kwargs):
 
-    print("----")
+    ret = IdentityMatrix()
+
+    if('scale' in kwargs.keys()):
+        ret = matmul(ScaleMatrix(kwargs['scale']), ret)
+
+    if('z_angle' in kwargs.keys()):
+        ret = matmul(RotZMatrix(kwargs['z_angle']), ret)
+    
+    if('y_angle' in kwargs.keys()):
+        ret = matmul(RotYMatrix(kwargs['y_angle']), ret)
+
+    if('x_angle' in kwargs.keys()):
+        ret = matmul(RotXMatrix(kwargs['x_angle']), ret)
+
+    if('translate' in kwargs.keys()):
+        ret = matmul(TranslateMatrix(kwargs['translate']), ret)
+    pprint(ret)
+    print("---\n")
 
     return(ret)
 
-def ComboXForm(translate = [0.0, 0.0, 0.0], 
-               scale = [1.0, 1.0, 1.0], 
-               x_angle = 0.0, y_angle = 0.0, z_angle = 0.0):
-    return(ConcatMatrices([ TranslateMatrix(translate),
-                            ScaleMatrix(scale),
-                            RotXMatrix(x_angle),
-                            RotYMatrix(y_angle),
-                            RotZMatrix(z_angle) ]))
 
 def VecMul(m, v):
     return([m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
@@ -231,8 +237,8 @@ class CheckerSimple(Material):
         h = Normalize(add(e_norm, mul(-2.0 * e_dot_n, n_norm)))
 
 
-        diffuse = [0.0, 0.0, 0.0]
-        specular = [0.0, 0.0, 0.0]
+        diffuse = (0.0, 0.0, 0.0)
+        specular = (0.0, 0.0, 0.0)
         for light in i.scene.lights:
             light_info = light.GetLightSampleInfo(i)
             light_dist = LA.norm(light_info.dir)
@@ -498,25 +504,24 @@ image = Image(IMAGE_WIDTH, IMAGE_HEIGHT)
 #
 scene = Scene()
 scene.camera.SetRes(IMAGE_WIDTH, IMAGE_HEIGHT)
-scene.camera.SetXForm(TranslateMatrix([0, 0, -6]))
-scene.camera.SetFov(45)
+scene.camera.SetXForm(ComboXForm(translate = [0, 3, -5],
+                                 x_angle = Radians(30)))
+scene.camera.SetFov(55)
 
 
 sphere = Sphere()
-rot = RotXMatrix(-pi / 4)
-xform = ComboXForm([1.0, 2.0, 3.0], [5.0] * 3, pi / 4)
-pprint(xform)
-sphere.SetXForm(xform)
+sphere.SetXForm(ComboXForm(translate = [-1.0, 0, 0.0], 
+                           scale = [1.0] * 3, 
+                           z_angle = pi / 4))
 scene.objects.append(sphere)
+
 
 material = CheckerSimple()
 material.color1 = [.2, .2, 1]
 sphere = Sphere()
 sphere.material = material
-scale = ScaleMatrix([0.5, 0.5, 0.5])
-translate = TranslateMatrix([0.5, 0.2, -3])
-xform = matmul(translate, scale)
-sphere.SetXForm(xform)
+sphere.SetXForm(ComboXForm(translate = [1.0, 0, 0], 
+                           scale = [1.0] * 3))
 scene.objects.append(sphere)
 
 material = CheckerSimple()
@@ -524,24 +529,18 @@ material.color0 = [.4, .4, .4]
 material.color1 = [1.0, 1.0, 1.0]
 rect = Rectangle()
 rect.material = material
-translate = TranslateMatrix([0.0, -1, 0])
-scale = ScaleMatrix([6, 1, 6])
-#rot = RotXMatrix(0)
-#xform = matmul(matmul(translate, scale), rot)
-xform = matmul(translate, scale)
-rect.SetXForm(xform)
+rect.SetXForm(ComboXForm(translate = [0.0, -1, 0],
+                        scale = [6, 1, 6]))
 scene.objects.append(rect)
 
-translate = TranslateMatrix([5.0, 10.0, -10])
 light = PointLight()
-light.SetXForm(translate)
+light.SetXForm(ComboXForm(translate = [5.0, 10.0, -1]))
 light.color = [1.0] * 3
 scene.lights.append(light)
 
-translate = TranslateMatrix([-10.0, 1.0, -2.0])
 light = PointLight()
-light.SetXForm(translate)
-light.color = [0.8] * 3
+light.SetXForm(ComboXForm(translate = [-5.0, 10.0, 1]))
+light.color = [0.2] * 3
 scene.lights.append(light)
 
 
