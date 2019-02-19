@@ -21,7 +21,7 @@ from copy import deepcopy
 EPSILON = sys.float_info.epsilon
 RAY_TRACE_EPSILON = .001
 IMAGE_WIDTH, IMAGE_HEIGHT = 512, 512
-MAX_RAY_RECURSION_DEPTH = 10
+MAX_RAY_RECURSION_DEPTH = 5
 DEFAULT_MATERIAL = None
 DEG_TO_RAD = pi / 180
 
@@ -44,6 +44,9 @@ def Saturate(v):
     if(v > 1):
         return(1)
     return(v)
+
+def GreaterThan3(v, a):
+    return(v[0] >= a and v[1] > a and v[2] > a)
 
 def IdentityMatrix():
     return([[1, 0, 0, 0],
@@ -108,8 +111,6 @@ def ComboXForm(**kwargs):
 
     if('translate' in kwargs.keys()):
         ret = matmul(TranslateMatrix(kwargs['translate']), ret)
-    pprint(ret)
-    print("---\n")
 
     return(ret)
 
@@ -138,6 +139,7 @@ def Render(image, scene):
         if(len(int_stack) > 0):
             int_stack[-1].next = new_int
             new_int.prev = int_stack[-1]
+            new_int.depth = new_int.prev.depth + 1
         int_stack.append(new_int)
 
     i = int_stack[0]
@@ -145,10 +147,7 @@ def Render(image, scene):
         for x in range(image.xres):
             scene.camera.GenPrimaryRay(i.ray, x, y)
 
-            if(i.Trace()):
-                i.CalcAll()
-                i.object.material.Shade(i)
-
+            if(scene.Trace(i, True)):
                 image.SetPixel(x, y, i.color)
             else:
                 image.SetPixel(x, y, (0, 0, 0))
@@ -166,8 +165,17 @@ class Ray:
         self.o = o
         self.dir = dir
 
+    def Set(self, o, dir, add_eps = False):
+        self.o, self.dir = [ *o ], [ *dir]
+        if(add_eps):
+            self.AddEpsilon()
+
+    def AddEpsilon(self):
+        self.o = add(self.o, mul(RAY_TRACE_EPSILON, self.dir))
+
 class Intersection:
     def __init__(self, scene):
+        self.depth = 0
         self.scene = scene          # Keep reference to scene
         self.ray = Ray()            # Ray used for intersection
         self.dist = inf             # distance along ray to point of intersection
@@ -184,9 +192,6 @@ class Intersection:
     def CalcAll(self):
         if(self.object != None):
             self.object.CalcAllIntersection(self)
-
-    def Trace(self):
-        return(self.scene.Trace(self))
 
     def Save(self):
         self.save_ray = deepcopy(self.ray)
@@ -247,11 +252,11 @@ class CheckerTex2D(Texture2D):
 
         return(self.color1)
 
-
 class SimpleMaterial(Material):
     def __init__(self, texture = ConstTex2D()):
         Material.__init__(self)
-        self.ks =  [.7, .7, .7]
+        self.ks =  [.7] * 3
+        self.kr =  [0.0] * 3
         self.spec_exp = 15.0
         self.texture = texture
 
@@ -261,7 +266,7 @@ class SimpleMaterial(Material):
         n_norm = Normalize(i.n)
         e_norm = Normalize(i.ray.dir)
         e_dot_n = dot(e_norm, n_norm)
-        h = Normalize(add(e_norm, mul(-2.0 * e_dot_n, n_norm)))
+        r = Normalize(add(e_norm, mul(-2.0 * e_dot_n, n_norm)))
 
 
         diffuse = (0.0, 0.0, 0.0)
@@ -271,24 +276,30 @@ class SimpleMaterial(Material):
             light_dist = LA.norm(light_info.dir)
             l_norm = mul(light_info.dir, 1.0 / light_dist)
 
-
             # Trace shadows
-            i.next.ray.dir = l_norm
-            i.next.ray.o = add(i.p, mul(RAY_TRACE_EPSILON, l_norm))
-            if(i.next.Trace()):
-                if(i.next.dist < light_dist):
-                    continue;
+            if(i.next != None):
+                i.next.ray.Set(i.p, l_norm, True)
+                if(i.scene.Trace(i.next, False, True)):
+                    if(i.next.dist < light_dist):
+                        continue;
 
 
-            l_dot_n = dot(l_norm, n_norm)
-            if(l_dot_n > 0.0):
-                diffuse = add(diffuse, mul(l_dot_n, light_info.emission))
+                l_dot_n = dot(l_norm, n_norm)
+                if(l_dot_n > 0.0):
+                    diffuse = add(diffuse, mul(l_dot_n, light_info.emission))
 
-                spec = l_dot_n * pow(dot(h, l_norm), self.spec_exp)
-                specular = add(specular, mul(spec, light_info.emission))
+                    spec = l_dot_n * pow(dot(r, l_norm), self.spec_exp)
+                    specular = add(specular, mul(spec, light_info.emission))
                 
         i.color = add(mul(i.color, diffuse), mul(self.ks, specular))
         i.opacity = [1, 1, 1]
+
+        # Trace reflection
+        if(i.next != None):
+            if(GreaterThan3(self.kr, .01)):
+                i.next.ray.Set(i.p, r, True)
+                if(i.scene.Trace(i.next, True)):
+                    i.color = add(i.color, mul(i.next.color, self.kr))
 
 
 DEFAULT_MATERIAL = SimpleMaterial()
@@ -349,10 +360,8 @@ class Camera(Object):
                (y + 0.5 - half_yres) / half_xres, # assuming square pixel aspect
                focal_dist]
 
-        ray.o = self.Origin()
-
         # Transform ray dir into global space
-        ray.dir = VecMul(self.xform, dir)
+        ray.Set(self.Origin(), VecMul(self.xform, dir))
 
     # Set Field of View in degrees
     def SetFov(self, angle): 
@@ -458,11 +467,16 @@ class Scene:
         self.objects = [ ]
         self.lights = [ ]
 
-    def Trace(self, i):
+    def Trace(self, i, shade = False, anyhit = False, depth = 0, min_dist = inf):
+        if(i == None):
+            return(False)
+
         i.object = None
-        min_dist = inf
         for object in self.objects:
             if(object.Intersect(i)):
+                if(anyhit):
+                    return(True)
+
                 if(i.dist < min_dist):
                     min_dist = i.dist
                     i.object = object
@@ -470,6 +484,8 @@ class Scene:
 
         if(i.object != None):
             i.Restore()
+            i.CalcAll()
+            i.object.material.Shade(i)
             return(True)
 
         return(False)
@@ -537,8 +553,8 @@ scene.camera.SetFov(55)
 
 gray_white_tex = CheckerTex2D(color0 = [.2, .2, .2],
                               color1 = [.8, .8, .8],
-                              ufreq = 20,
-                              vfreq = 20)
+                              ufreq = 6,
+                              vfreq = 6)
 
 red_checker_tex = CheckerTex2D(color0 = [0.0, 0, 0],
                                color1 = [1.0, 0, 0],
@@ -552,6 +568,7 @@ blue_checker_tex = CheckerTex2D(color0 = [0.0, 0, 0],
 
 
 material = SimpleMaterial(texture = blue_checker_tex)
+material.kr = [.4] * 3
 sphere = Sphere()
 sphere.material = material
 sphere.SetXForm(ComboXForm(translate = [-1.0, 0, 0.0], 
@@ -562,6 +579,7 @@ scene.objects.append(sphere)
 
 material = SimpleMaterial(texture = red_checker_tex)
 material.color1 = [.2, .2, 1]
+material.kr = [.4] * 3
 sphere = Sphere()
 sphere.material = material
 sphere.SetXForm(ComboXForm(translate = [1.0, 0, 0], 
@@ -569,8 +587,7 @@ sphere.SetXForm(ComboXForm(translate = [1.0, 0, 0],
 scene.objects.append(sphere)
 
 material = SimpleMaterial(texture = gray_white_tex)
-material.color0 = [.4, .4, .4]
-material.color1 = [1.0, 1.0, 1.0]
+material.kr = [.9] * 3
 rect = Rectangle()
 rect.material = material
 rect.SetXForm(ComboXForm(translate = [0.0, -1, 0],
@@ -578,7 +595,7 @@ rect.SetXForm(ComboXForm(translate = [0.0, -1, 0],
 scene.objects.append(rect)
 
 light = PointLight()
-light.SetXForm(ComboXForm(translate = [5.0, 10.0, -1]))
+light.SetXForm(ComboXForm(translate = [5.0, 10.0, -10]))
 light.color = [1.0] * 3
 scene.lights.append(light)
 
