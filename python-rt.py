@@ -21,10 +21,14 @@ from copy import deepcopy
 
 EPSILON = sys.float_info.epsilon
 RAY_TRACE_EPSILON = .001
-IMAGE_WIDTH, IMAGE_HEIGHT = 128, 128
+IMAGE_WIDTH, IMAGE_HEIGHT = 128, 96 
+IMAGE_WIDTH, IMAGE_HEIGHT = 512, 384 
 MAX_RAY_RECURSION_DEPTH = 5
 DEFAULT_MATERIAL = None
 DEG_TO_RAD = pi / 180
+PI_2 = 0.5 * pi
+PI_4 = 0.25 * pi
+PIx2 = 2.0 * pi
 
 ################################################################################
 ### Utility Functions
@@ -53,63 +57,66 @@ def GreaterThan3(v, a):
     return(v[0] >= a and v[1] > a and v[2] > a)
 
 def VecMul(m, v):
-    return([m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+    return((m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
             m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
-            m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2]])
+            m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2]))
 
 def PointMul(m, p):
-    return([m[0][0] * p[0] + m[0][1] * p[1] + m[0][2] * p[2] + m[0][3],
+    return((m[0][0] * p[0] + m[0][1] * p[1] + m[0][2] * p[2] + m[0][3],
             m[1][0] * p[0] + m[1][1] * p[1] + m[1][2] * p[2] + m[1][3],
-            m[2][0] * p[0] + m[2][1] * p[1] + m[2][2] * p[2] + m[2][3]])
+            m[2][0] * p[0] + m[2][1] * p[1] + m[2][2] * p[2] + m[2][3]))
 
 ################################################################################
 ### Transform Matrices
 ################################################################################
 
 def IdentityMatrix():
-    return([[1, 0, 0, 0],
-            [0, 1, 0, 0],
-            [0, 0, 1, 0],
-            [0, 0, 0, 1]])
+    return(((1, 0, 0, 0),
+            (0, 1, 0, 0),
+            (0, 0, 1, 0),
+            (0, 0, 0, 1)))
 
 def TranslateMatrix(p):
-    return([[1, 0, 0, p[0]],
-            [0, 1, 0, p[1]],
-            [0, 0, 1, p[2]],
-            [0, 0, 0, 1]])
+    return(((1, 0, 0, p[0]),
+            (0, 1, 0, p[1]),
+            (0, 0, 1, p[2]),
+            (0, 0, 0, 1)))
     
 def ScaleMatrix(p):
-    return([[p[0], 0,    0,    0],
-            [0,    p[1], 0,    0],
-            [0,    0,    p[2], 0],
-            [0,    0,    0,    1]])
+    if(type(p) not in (tuple, list)):
+        p = (p, p, p)
+
+    return(((p[0], 0,    0,    0),
+            (0,    p[1], 0,    0),
+            (0,    0,    p[2], 0),
+            (0,    0,    0,    1)))
 
 def RotXMatrix(angle):
     sin_angle = sin(angle)
     cos_angle = cos(angle)
 
-    return([[1,    0,          0,         0],
-            [0,    cos_angle, -sin_angle, 0],
-            [0,    sin_angle,  cos_angle, 0],
-            [0,    0,          0,         1]])
+    return(((1,    0,          0,         0),
+            (0,    cos_angle, -sin_angle, 0),
+            (0,    sin_angle,  cos_angle, 0),
+            (0,    0,          0,         1)))
 
 def RotYMatrix(angle):
     sin_angle = sin(angle)
     cos_angle = cos(angle)
 
-    return([[cos_angle,    0,  -sin_angle, 0],
-            [0,            1,  0,          0],
-            [sin_angle,    0,  cos_angle,  0],
-            [0,            0,  0,          1]])
+    return(((cos_angle,    0,  -sin_angle, 0),
+            (0,            1,  0,          0),
+            (sin_angle,    0,  cos_angle,  0),
+            (0,            0,  0,          1)))
 
 def RotZMatrix(angle):
     sin_angle = sin(angle)
     cos_angle = cos(angle)
 
-    return( [cos_angle, -sin_angle, 0, 0],
-            [sin_angle,  cos_angle, 0, 0],
-            [0,          0,         1, 0],
-            [0,          0,         0, 1])
+    return(((cos_angle, -sin_angle, 0, 0),
+            (sin_angle,  cos_angle, 0, 0),
+            (0,          0,         1, 0),
+            (0,          0,         0, 1)))
 
 def ComboXForm(**kwargs):
 
@@ -167,7 +174,7 @@ def Render(image, scene):
         for x in range(image.xres):
             scene.camera.GenPrimaryRay(i.ray, x, y)
 
-            if(scene.Trace(i, True)):
+            if(i.Trace(True)):
                 image.SetPixel(x, y, i.color)
             else:
                 image.SetPixel(x, y, (0, 0, 0))
@@ -182,8 +189,8 @@ def Render(image, scene):
 
 class Ray:
     def __init__(self, 
-                 o = [0.0, 0.0, 0.0], 
-                 dir = [0.0, 0.0, 1.0]):
+                 o = (0.0, 0.0, 0.0), 
+                 dir = (0.0, 0.0, 1.0)):
         self.o = o
         self.dir = dir
 
@@ -201,15 +208,18 @@ class Intersection:
         self.scene = scene          # Keep reference to scene
         self.ray = Ray()            # Ray used for intersection
         self.dist = inf             # distance along ray to point of intersection
-        self.p = [0.0, 0.0, 0.0]    # point of intersection
-        self.n = [0.0, 0.0, 0.0]    # normal at intersection
-        self.uv = [0.0, 0.0]        # uv coordinates at point of intersection
+        self.p = (0.0, 0.0, 0.0)    # point of intersection
+        self.n = (0.0, 0.0, 0.0)    # normal at intersection
+        self.uv = (0.0, 0.0)        # uv coordinates at point of intersection
         self.object = None          # Intersection object
 
-        self.color = [1, 1, 1]      # Reflected at interesection
-        self.opacity = [1, 1, 1]    # Colored opacity at intersection
+        self.color = (1, 1, 1)      # Reflected at interesection
+        self.opacity = (1, 1, 1)    # Colored opacity at intersection
         self.prev = None            # Previous intersection in recurse ray trace
         self.next = None            # Next intersection in recurse ray trace
+
+    def Trace(self, shade = False, anyhit = False, depth = 0, min_dist = inf):
+        return(scene.Trace(self, shade, anyhit, depth, min_dist))
 
     def CalcAll(self):
         if(self.object != None):
@@ -241,10 +251,10 @@ class Texture2D:
             setattr(self, key, value)
 
     def Sample(self, uv):
-        return([0.0] * 4)
+        return((0.0, 0.0, 0.0))
 
 class ConstTex2D(Texture2D):
-    def __init__(self, color = [1, 1, 1]):
+    def __init__(self, color = (1, 1, 1)):
         Texture2D.__init__(self)
         self.color = color
 
@@ -290,6 +300,8 @@ class CheckerTex2D(Texture2D):
 
         return(self.color1)
 
+
+
 ################################################################################
 ### Materials
 ################################################################################
@@ -305,8 +317,8 @@ class Material:
 class SimpleMaterial(Material):
     def __init__(self, texture = ConstTex2D()):
         Material.__init__(self)
-        self.ks       =  [.7] * 3    # specular coefficient
-        self.kr       =  [0.0] * 3   # reflection coefficient
+        self.ks       =  (.7, .7, .7)    # specular coefficient
+        self.kr       =  (0.0, 0.0, 0.0)   # reflection coefficient
         self.spec_exp = 15.0         # specular exponent (inverse roughness)
         self.ior      = 1.0          # Index of refraction
         self.texture  = texture      
@@ -329,7 +341,7 @@ class SimpleMaterial(Material):
             # Trace shadows
             if(i.next != None):
                 i.next.ray.Set(i.p, l_norm, True)
-                if(i.scene.Trace(i.next, False, True)):
+                if(i.next.Trace(False, True)):
                     if(i.next.dist < light_dist):
                         continue;
 
@@ -348,7 +360,7 @@ class SimpleMaterial(Material):
         if(i.next != None):
             if(GreaterThan3(self.kr, .01)):
                 i.next.ray.Set(i.p, r, True)
-                if(i.scene.Trace(i.next, True)):
+                if(i.next.Trace(True)):
                     i.color = add(i.color, mul(i.next.color, self.kr))
 
 
@@ -415,8 +427,8 @@ class Sphere(Object):
         i.p = add(i.ray.o, t_dir_glob)
         p_obj = add(o, t_dir)
         i.n = VecMul(self.xform, p_obj)
-        i.uv[0] = (atan2(p_obj[2], p_obj[0]) + pi)  / (2.0 * pi) # longitude angle 
-        i.uv[1] = acos(p_obj[1]) /  pi                         # latitude angle
+        i.uv = ( (atan2(p_obj[2], p_obj[0]) + pi)  / (2.0 * pi), # longitude angle 
+                  acos(p_obj[1]) /  pi )                         # latitude angle
 
         return True
 
@@ -458,12 +470,38 @@ class Rectangle(Object):
         p[1] = 0
         i.p = PointMul(self.xform, p)
         i.dist = LA.norm(sub(i.ray.o, i.p))
-        i.n = [ self.xform[0][1], self.xform[1][1], self.xform[2][1] ]
-        i.uv = [(p[0] + 1) / 2, (p[2] + 1) / 2]
+        i.n = ( self.xform[0][1], self.xform[1][1], self.xform[2][1] )
+        i.uv = ((p[0] + 1) / 2, (p[2] + 1) / 2)
         return(True)
 
     def CalcAllIntersection(self, i):
         return
+
+
+################################################################################
+### Environment shader
+################################################################################
+
+class EnvironmentShader(Object):
+    def __init__(self):
+        Object.__init__(self)
+
+    def Shade(self, i):
+        return(False)
+
+
+class SphereEnvShader(EnvironmentShader):
+    def __init__(self, texture):
+        EnvironmentShader.__init__(self)
+        self.texture = texture
+
+    def Shade(self, i):
+        dir_obj = Normalize(VecMul(self.inv_xform, i.ray.dir))
+        i.uv = ((atan2(dir_obj[2], dir_obj[0]) + pi) / PIx2,
+                1 - (acos(dir_obj[1])  / pi))
+        i.color = self.texture.Sample(i.uv)
+        return(True)
+                   
 
 
 ################################################################################
@@ -513,9 +551,9 @@ class Camera(Object):
         focal_dist = 1.0 / tan(self.fov / 2)
 
         # Ray direction pointing toward center of the pixel in the image plane
-        dir = [(x + 0.5 - half_xres) / half_xres,
-               (y + 0.5 - half_yres) / half_xres, # assuming square pixel aspect
-               focal_dist]
+        dir = ( (x + 0.5 - half_xres) / half_xres,
+                (y + 0.5 - half_yres) / half_xres, # assuming square pixel aspect
+                focal_dist )
 
         # Transform ray dir into global space
         ray.Set(self.Origin(), VecMul(self.xform, dir))
@@ -534,6 +572,7 @@ class Scene:
         self.camera = Camera()
         self.objects = [ ]
         self.lights = [ ]
+        self.env_shader = None
 
     def Trace(self, i, shade = False, anyhit = False, depth = 0, min_dist = inf):
         if(i == None):
@@ -555,6 +594,11 @@ class Scene:
             i.CalcAll()
             i.object.material.Shade(i)
             return(True)
+        else:
+            if(self.env_shader != None):
+                if(self.env_shader.Shade(i)):
+                    i.dist = inf
+                    return(True)
 
         return(False)
 
@@ -618,70 +662,76 @@ def BuildScene():
 
     # Setup camera
     scene.camera.SetRes(IMAGE_WIDTH, IMAGE_HEIGHT)
-    scene.camera.SetXForm(ComboXForm(translate = [0, 3, -5],
-                                     x_angle = Radians(30)))
+    scene.camera.SetXForm(ComboXForm(translate = (0, 3, -7),
+                                     x_angle = Radians(20)))
     scene.camera.SetFov(55)
 
 
 
     # Create some textures
-    gray_white_tex = CheckerTex2D(color0 = [.2, .2, .2],
-                                  color1 = [.8, .8, .8],
+    gray_white_tex = CheckerTex2D(color0 = (.2, .2, .2),
+                                  color1 = (.8, .8, .8),
                                   ufreq = 10,
                                   vfreq = 10)
 
-    red_checker_tex = CheckerTex2D(color0 = [0.0, 0, 0],
-                                   color1 = [1.0, 0, 0],
+    red_checker_tex = CheckerTex2D(color0 = (0.0, 0, 0),
+                                   color1 = (1.0, 0, 0),
                                    ufreq = 1,
                                    vfreq = 10)
 
-    blue_checker_tex = CheckerTex2D(color0 = [0.0, 0, 0],
-                                    color1 = [0.0, 0, 1],
+    blue_checker_tex = CheckerTex2D(color0 = (0.0, 0, 0),
+                                    color1 = (0.0, 0, 1),
                                     ufreq = 10,
                                     vfreq = 1)
 
-    image_tex = ImageTex2D("./tex/reddish.png")
+    reddish_tex = ImageTex2D("./tex/reddish.png")
+    church_tex = ImageTex2D("./tex/church.png")
+
+    # Environment shader
+#    scene.env_shader = SphereEnvShader(ConstTex2D((0, 0, 1)))
+    scene.env_shader = SphereEnvShader(church_tex)
+    scene.env_shader.SetXForm(ComboXForm(translate = (-1.0, 0, 0.0), 
+                                         y_angle = 2 * PI_2))
 
     # Sphere 1
     material = SimpleMaterial(texture = blue_checker_tex)
-    material.kr = [.4] * 3
+    material.kr = (.4, .4, .4)
     sphere = Sphere()
     sphere.material = material
-    sphere.SetXForm(ComboXForm(translate = [-1.0, 0, 0.0], 
-                               scale = [1] * 3, 
+    sphere.SetXForm(ComboXForm(translate = (-1.0, 0, 0.0), 
+                               scale = (1, 1, 1), 
                                z_angle = 0))
     scene.objects.append(sphere)
 
 
     # Sphere 2
     material = SimpleMaterial(texture = red_checker_tex)
-    material.color1 = [.2, .2, 1]
-    material.kr = [.4] * 3
+    material.kr = (.4, .4, .4)
     sphere = Sphere()
     sphere.material = material
-    sphere.SetXForm(ComboXForm(translate = [.7, 0, -.7], 
-                               scale = [.7] * 3))
+    sphere.SetXForm(ComboXForm(translate = (.7, 0, -.7), 
+                               scale = .7))
     scene.objects.append(sphere)
 
     # Ground plane
-    material = SimpleMaterial(texture = image_tex)
-    material.kr = [.5] * 3
+    material = SimpleMaterial(texture = reddish_tex)
+    material.kr = (.3, .3, .3)
     rect = Rectangle()
     rect.material = material
-    rect.SetXForm(ComboXForm(translate = [0.0, -1, 0],
-                            scale = [6, 1, 6]))
+    rect.SetXForm(ComboXForm(translate = (0.0, -1, 0),
+                             scale = (6, 1, 6)))
     scene.objects.append(rect)
 
     # Light 1
     light = PointLight()
-    light.SetXForm(ComboXForm(translate = [5.0, 10.0, -10]))
-    light.color = [1.0] * 3
+    light.SetXForm(ComboXForm(translate = (5.0, 10.0, -10)))
+    light.color = (1.0, 1.0, 1.0)
     scene.lights.append(light)
 
     # Light 2
     light = PointLight()
-    light.SetXForm(ComboXForm(translate = [-5.0, 10.0, 1]))
-    light.color = [0.2] * 3
+    light.SetXForm(ComboXForm(translate = (-5.0, 10.0, 1)))
+    light.color = (0.2, 0.2, 0.2)
     scene.lights.append(light)
 
     return(scene)
@@ -692,7 +742,6 @@ def BuildScene():
 
 image = Image(IMAGE_WIDTH, IMAGE_HEIGHT)
 scene = BuildScene()
-
 
 #
 # Render and display 
